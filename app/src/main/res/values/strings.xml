@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">FocusBlocker</string>
+    <string name="accessibility_description">FocusBlocker détecte l\'application ouverte pour bloquer les Shorts YouTube et les réseaux sociaux pendant les horaires choisis. Aucune donnée ne quitte le téléphone.</string>
+</resources>

@@ -1,0 +1,45 @@
+name: Build APK
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Tests et compilation
+        run: ./gradlew :core:test :app:assembleDebug
+
+      - name: Renommer l'APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk FocusBlocker.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FocusBlocker
+          path: FocusBlocker.apk
+
+      # Sur main : publie l'APK dans la release « latest », téléchargeable depuis le téléphone.
+      - name: Publier la release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest FocusBlocker.apk \
+            --title "FocusBlocker (dernière version)" \
+            --notes "Compilé depuis ${GITHUB_SHA::7}. Téléchargez FocusBlocker.apk sur le téléphone pour l'installer." \
+            --target "$GITHUB_SHA"
