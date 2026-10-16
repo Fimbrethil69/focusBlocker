@@ -8,8 +8,10 @@ import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
+import com.focusblocker.core.BlockKind
 import com.focusblocker.data.ConfigRepository
 import com.focusblocker.data.SocialApps
+import com.focusblocker.data.StatsRepository
 import com.focusblocker.ui.BlockActivity
 import java.time.LocalDateTime
 
@@ -20,12 +22,14 @@ import java.time.LocalDateTime
  */
 class BlockerAccessibilityService : AccessibilityService() {
     private lateinit var repository: ConfigRepository
+    private lateinit var stats: StatsRepository
     private var lastActionAt = 0L
     private var lastShortsCheckAt = 0L
     private var lastToastAt = 0L
 
     override fun onServiceConnected() {
         repository = ConfigRepository.get(this)
+        stats = StatsRepository.get(this)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -42,6 +46,7 @@ class BlockerAccessibilityService : AccessibilityService() {
             lastActionAt = nowMs
             performGlobalAction(GLOBAL_ACTION_HOME)
             startActivity(BlockActivity.intent(this, pkg))
+            stats.record(BlockKind.SOCIAL)
             return
         }
 
@@ -53,6 +58,7 @@ class BlockerAccessibilityService : AccessibilityService() {
             if (isShortsVisible()) {
                 lastActionAt = nowMs
                 performGlobalAction(GLOBAL_ACTION_BACK)
+                stats.record(BlockKind.SHORTS)
                 if (nowMs - lastToastAt > 5_000) {
                     lastToastAt = nowMs
                     Toast.makeText(this, "Shorts bloqués", Toast.LENGTH_SHORT).show()

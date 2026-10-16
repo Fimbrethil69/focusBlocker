@@ -12,8 +12,11 @@ android {
         applicationId = "com.focusblocker"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        // Numéro de compilation GitHub Actions : permet à l'application de savoir
+        // si une version plus récente a été publiée.
+        val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = buildNumber
+        versionName = "1.$buildNumber"
     }
 
     signingConfigs {

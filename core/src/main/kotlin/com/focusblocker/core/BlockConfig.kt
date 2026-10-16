@@ -55,6 +55,10 @@ data class BlockConfig(
         return null
     }
 
+    /** Mêmes plages (dans n'importe quel ordre) et mêmes jours. */
+    fun sameScheduleAs(other: BlockConfig): Boolean =
+        ranges.toSet() == other.ranges.toSet() && days == other.days
+
     companion object {
         val DEFAULT_RANGES = listOf(TimeRange.of(9, 0, 12, 0), TimeRange.of(14, 0, 20, 0))
         val ALL_DAYS: Set<DayOfWeek> = DayOfWeek.entries.toSet()
@@ -73,14 +77,26 @@ data class ConfigState(
     val active: BlockConfig,
     val pending: BlockConfig? = null,
     val pendingFrom: LocalDate? = null,
+    /** Date d'entrée en vigueur des horaires actuels, ou null s'ils n'ont jamais changé. */
+    val scheduleSince: LocalDate? = null,
 ) {
     /** Applique la configuration en attente si sa date d'effet est atteinte. */
     fun resolved(today: LocalDate): ConfigState =
         if (pending != null && pendingFrom != null && !today.isBefore(pendingFrom)) {
-            ConfigState(pending)
+            ConfigState(pending, scheduleSince = if (pending.sameScheduleAs(active)) scheduleSince else pendingFrom)
         } else {
             this
         }
+
+    /** Vrai si la modification en attente change les plages ou les jours (pas seulement les applications). */
+    val pendingChangesSchedule: Boolean
+        get() = pending != null && !pending.sameScheduleAs(active)
+
+    /** Jours écoulés depuis la dernière modification effective des horaires, ou depuis [fallback] s'il n'y en a jamais eu. */
+    fun scheduleUnchangedDays(today: LocalDate, fallback: LocalDate): Long {
+        val since = resolved(today).scheduleSince ?: fallback
+        return ChronoUnit.DAYS.between(since, today).coerceAtLeast(0)
+    }
 
     fun isBlockedAt(time: LocalDateTime): Boolean = resolved(time.toLocalDate()).active.isBlockedAt(time)
 
@@ -96,7 +112,7 @@ data class ConfigState(
 
     fun withoutPending(time: LocalDateTime): ConfigState {
         check(canEdit(time)) { "Modification interdite pendant une plage de blocage" }
-        return ConfigState(resolved(time.toLocalDate()).active)
+        return resolved(time.toLocalDate()).copy(pending = null, pendingFrom = null)
     }
 }
 

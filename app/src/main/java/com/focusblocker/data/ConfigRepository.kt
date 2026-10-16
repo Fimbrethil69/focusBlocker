@@ -61,6 +61,7 @@ class ConfigRepository private constructor(context: Context) {
             put("active", encodeConfig(state.active))
             state.pending?.let { put("pending", encodeConfig(it)) }
             state.pendingFrom?.let { put("pendingFrom", it.toString()) }
+            state.scheduleSince?.let { put("scheduleSince", it.toString()) }
         }.toString()
 
         private fun encodeConfig(config: BlockConfig) = JSONObject().apply {
@@ -79,6 +80,7 @@ class ConfigRepository private constructor(context: Context) {
                     active = decodeConfig(o.getJSONObject("active")),
                     pending = o.optJSONObject("pending")?.let(::decodeConfig),
                     pendingFrom = if (o.has("pendingFrom")) LocalDate.parse(o.getString("pendingFrom")) else null,
+                    scheduleSince = if (o.has("scheduleSince")) LocalDate.parse(o.getString("scheduleSince")) else null,
                 )
             } catch (e: Exception) {
                 DEFAULT

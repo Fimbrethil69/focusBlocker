@@ -36,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,32 +46,43 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.focusblocker.core.BlockConfig
+import com.focusblocker.core.BlockCount
+import com.focusblocker.core.BlockStats
 import com.focusblocker.core.TimeRange
 import com.focusblocker.core.formatMinute
 import com.focusblocker.data.ConfigRepository
 import com.focusblocker.data.SocialApps
+import com.focusblocker.data.StatsRepository
 import com.focusblocker.service.BlockerAccessibilityService
+import com.focusblocker.update.Updater
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val repository = ConfigRepository.get(this)
+        val stats = StatsRepository.get(this)
         setContent {
-            FocusTheme { MainScreen(repository) }
+            FocusTheme { MainScreen(repository, stats) }
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MainScreen(repository: ConfigRepository) {
+private fun MainScreen(repository: ConfigRepository, statsRepository: StatsRepository) {
     val context = LocalContext.current
     var now by remember { mutableStateOf(LocalDateTime.now()) }
     var state by remember { mutableStateOf(repository.load()) }
+    var stats by remember { mutableStateOf(statsRepository.load()) }
+    val installDate = remember { installDate(context) }
     var serviceEnabled by remember { mutableStateOf(BlockerAccessibilityService.isEnabled(context)) }
 
     // Brouillon des réglages : part de la configuration en attente si elle existe.
@@ -79,6 +91,7 @@ private fun MainScreen(repository: ConfigRepository) {
     fun refresh() {
         now = LocalDateTime.now()
         state = repository.load()
+        stats = statsRepository.load()
         serviceEnabled = BlockerAccessibilityService.isEnabled(context)
     }
 
@@ -130,6 +143,13 @@ private fun MainScreen(repository: ConfigRepository) {
                 color = if (blocked) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant,
             )
 
+            StatsSection(
+                stats = stats,
+                today = now.toLocalDate(),
+                unchangedDays = state.scheduleUnchangedDays(now.toLocalDate(), installDate),
+                pendingChangesSchedule = state.pendingChangesSchedule,
+            )
+
             if (!canEdit) {
                 InfoCard(
                     title = "Réglages verrouillés",
@@ -177,6 +197,98 @@ private fun MainScreen(repository: ConfigRepository) {
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+
+            UpdateSection()
+        }
+    }
+}
+
+@Composable
+private fun StatsSection(stats: BlockStats, today: LocalDate, unchangedDays: Long, pendingChangesSchedule: Boolean) {
+    Section("Statistiques") {
+        Text("Ouvertures bloquées", style = MaterialTheme.typography.titleSmall)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            StatTile("Aujourd'hui", stats.day(today), Modifier.weight(1f))
+            StatTile("Semaine", stats.week(today), Modifier.weight(1f))
+            StatTile("Mois", stats.month(today), Modifier.weight(1f))
+            StatTile("Total", stats.total(), Modifier.weight(1f))
+        }
+        Text("Semaine : depuis lundi · Mois : depuis le 1er", style = MaterialTheme.typography.bodySmall)
+
+        Text(
+            if (unchangedDays == 0L) "Horaires modifiés aujourd'hui" else "Horaires inchangés depuis ${plural(unchangedDays, "jour")}",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        if (pendingChangesSchedule) {
+            Text(
+                "Une modification des horaires est en attente : ce compteur repartira de zéro demain.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatTile(label: String, count: BlockCount, modifier: Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(count.total.toString(), style = MaterialTheme.typography.headlineMedium)
+        Text(label, style = MaterialTheme.typography.labelMedium)
+        Text("dont ${count.shorts} Shorts", style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun UpdateSection() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val installed = remember { Updater.installedVersion(context) }
+    var available by remember { mutableStateOf<Long?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+
+    Section("Mises à jour") {
+        Text("Version installée : ${Updater.versionName(installed)}")
+        message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+
+        val latest = available
+        if (latest == null) {
+            Button(enabled = !busy, onClick = {
+                scope.launch {
+                    busy = true
+                    message = "Recherche…"
+                    message = try {
+                        val version = Updater.latestVersion()
+                        if (version > installed) {
+                            available = version
+                            "Nouvelle version disponible : ${Updater.versionName(version)}"
+                        } else {
+                            "Vous avez la dernière version."
+                        }
+                    } catch (e: Exception) {
+                        "Impossible de vérifier. Êtes-vous connecté à Internet ?"
+                    }
+                    busy = false
+                }
+            }) { Text("Vérifier les mises à jour") }
+        } else {
+            Button(enabled = !busy, onClick = {
+                if (!Updater.canInstall(context)) {
+                    message = "Autorisez FocusBlocker à installer des applications, revenez ici, puis touchez à nouveau « Installer »."
+                    Updater.openInstallPermissionSettings(context)
+                } else {
+                    scope.launch {
+                        busy = true
+                        message = "Téléchargement…"
+                        try {
+                            Updater.install(context, Updater.download(context))
+                            message = "Confirmez l'installation dans la fenêtre d'Android."
+                        } catch (e: Exception) {
+                            message = "Échec du téléchargement. Réessayez."
+                        }
+                        busy = false
+                    }
+                }
+            }) { Text("Installer la version ${Updater.versionName(latest)}") }
         }
     }
 }
@@ -280,6 +392,13 @@ private fun pickRange(context: Context, initial: TimeRange?, onResult: (TimeRang
         }, end / 60, end % 60, true).apply { setTitle("Fin (début : ${formatMinute(startMinute)})") }.show()
     }, start / 60, start % 60, true).apply { setTitle("Début de la plage") }.show()
 }
+
+private fun plural(n: Long, word: String) = if (n <= 1) "$n $word" else "$n ${word}s"
+
+private fun installDate(context: Context): LocalDate =
+    Instant.ofEpochMilli(context.packageManager.getPackageInfo(context.packageName, 0).firstInstallTime)
+        .atZone(ZoneId.systemDefault())
+        .toLocalDate()
 
 private fun isInstalled(context: Context, packageName: String): Boolean = try {
     context.packageManager.getPackageInfo(packageName, 0)

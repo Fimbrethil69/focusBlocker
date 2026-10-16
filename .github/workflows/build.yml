@@ -25,7 +25,10 @@ jobs:
         run: ./gradlew :core:test :app:assembleDebug
 
       - name: Renommer l'APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk FocusBlocker.apk
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk FocusBlocker.apk
+          # Lu par le bouton « Vérifier les mises à jour » de l'application.
+          echo "$GITHUB_RUN_NUMBER" > version.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -39,7 +42,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest FocusBlocker.apk \
-            --title "FocusBlocker (dernière version)" \
-            --notes "Compilé depuis ${GITHUB_SHA::7}. Téléchargez FocusBlocker.apk sur le téléphone pour l'installer." \
+          gh release create latest FocusBlocker.apk version.txt \
+            --title "FocusBlocker 1.$GITHUB_RUN_NUMBER" \
+            --notes "Version 1.$GITHUB_RUN_NUMBER, compilée depuis ${GITHUB_SHA::7}. Téléchargez FocusBlocker.apk sur le téléphone pour l'installer." \
             --target "$GITHUB_SHA"

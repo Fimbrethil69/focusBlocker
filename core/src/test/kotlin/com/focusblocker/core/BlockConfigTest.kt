@@ -68,13 +68,32 @@ class BlockConfigTest {
         assertTrue(state.isBlockedAt(at(12, 14, 0)))
         // Le lendemain, la nouvelle s'applique.
         assertFalse(state.isBlockedAt(at(13, 10, 0)))
-        assertEquals(ConfigState(loosened), state.resolved(at(13, 0, 0).toLocalDate()))
+        assertEquals(ConfigState(loosened, scheduleSince = at(13, 0, 0).toLocalDate()), state.resolved(at(13, 0, 0).toLocalDate()))
     }
 
     @Test
     fun cancellingPendingKeepsActive() {
         val state = ConfigState(config).withEdit(config.copy(ranges = emptyList()), at(12, 12, 30))
         assertEquals(ConfigState(config), state.withoutPending(at(12, 12, 45)))
+    }
+
+    @Test
+    fun scheduleUnchangedDays() {
+        val installed = at(1, 0, 0).toLocalDate()
+        val state = ConfigState(config)
+        assertEquals(11L, state.scheduleUnchangedDays(at(12, 0, 0).toLocalDate(), installed))
+
+        // Changer seulement les applications ne remet pas le compteur à zéro.
+        val appsOnly = state.withEdit(config.copy(blockedPackages = emptySet()), at(12, 12, 30))
+        assertFalse(appsOnly.pendingChangesSchedule)
+        assertEquals(13L, appsOnly.scheduleUnchangedDays(at(14, 0, 0).toLocalDate(), installed))
+
+        // Changer les horaires le remet à zéro le jour où ils prennent effet.
+        val newHours = state.withEdit(config.copy(ranges = listOf(TimeRange.of(8, 0, 12, 0))), at(12, 12, 30))
+        assertTrue(newHours.pendingChangesSchedule)
+        assertEquals(11L, newHours.scheduleUnchangedDays(at(12, 0, 0).toLocalDate(), installed))
+        assertEquals(0L, newHours.scheduleUnchangedDays(at(13, 0, 0).toLocalDate(), installed))
+        assertEquals(3L, newHours.scheduleUnchangedDays(at(16, 0, 0).toLocalDate(), installed))
     }
 
     @Test

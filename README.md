@@ -4,7 +4,9 @@ Application Android qui :
 
 - **bloque les Shorts YouTube en permanence** : dès que le lecteur Shorts s'ouvre dans l'application YouTube, elle revient en arrière. Le reste de YouTube fonctionne normalement ;
 - **bloque les réseaux sociaux pendant des plages horaires** (par défaut **9h-12h et 14h-20h**, tous les jours) : l'application est fermée et un écran « bloqué jusqu'à… » s'affiche ;
-- **verrouille ses propres réglages** : les horaires, les jours et la liste des applications ne sont modifiables **qu'en dehors des plages de blocage**, et toute modification ne prend effet **que le lendemain**.
+- **verrouille ses propres réglages** : les horaires, les jours et la liste des applications ne sont modifiables **qu'en dehors des plages de blocage**, et toute modification ne prend effet **que le lendemain** ;
+- **affiche des statistiques** : nombre d'ouvertures bloquées aujourd'hui, cette semaine, ce mois et au total (dont les Shorts), et nombre de jours depuis la dernière modification des horaires ;
+- **se met à jour depuis l'application** : bouton « Vérifier les mises à jour ».
 
 Applications bloquées par défaut : Instagram, TikTok, Facebook (et Lite), Snapchat, X, Threads, Reddit. On peut aussi cocher Pinterest, LinkedIn, BeReal ou YouTube en entier.
 
@@ -16,13 +18,19 @@ Applications bloquées par défaut : Instagram, TikTok, Facebook (et Lite), Snap
    - Sur Android 13 et plus, si l'option est grisée (« paramètre restreint ») : *Paramètres → Applications → FocusBlocker → ⋮ (en haut à droite) → Autoriser les paramètres restreints*, puis réessayez.
 4. Conseillé : *Paramètres → Applications → FocusBlocker → Batterie → Sans restriction*, pour qu'Android ne coupe pas le service.
 
-Les nouvelles versions s'installent par-dessus l'ancienne sans perdre les réglages.
+## Mises à jour
+
+En bas de l'écran principal, touchez **Vérifier les mises à jour**, puis **Installer la version…** si une nouvelle version existe. La première fois, Android demande d'autoriser FocusBlocker à installer des applications : acceptez, revenez dans FocusBlocker et touchez à nouveau le bouton.
+
+On peut aussi retélécharger `FocusBlocker.apk` depuis la page Releases. Dans les deux cas, la nouvelle version s'installe par-dessus l'ancienne sans perdre les réglages ni les statistiques.
 
 ## Fonctionnement
 
 L'application utilise un **service d'accessibilité** pour connaître l'application au premier plan et, dans YouTube, repérer le lecteur Shorts grâce aux identifiants de ses vues (`reel_recycler`, `reel_player_page_container`…). Si une mise à jour de YouTube renomme ces vues, il faut compléter la liste `SHORTS_VIEW_IDS` dans `BlockerAccessibilityService.kt`.
 
-Rien ne quitte le téléphone : pas d'accès réseau, pas de collecte de données.
+Le compteur « horaires inchangés » ne repart de zéro que lorsqu'une modification des plages ou des jours **prend effet** (le lendemain). Changer seulement la liste des applications ne le remet pas à zéro.
+
+Rien ne quitte le téléphone : aucune donnée n'est collectée. L'accès à Internet ne sert qu'au bouton de mise à jour, qui télécharge `version.txt` et `FocusBlocker.apk` depuis la release « latest » de GitHub.
 
 ### Limites connues
 - Désactiver le service d'accessibilité ou désinstaller l'application lève le blocage. C'est un choix : les paramètres d'Android ne sont pas bloqués.
