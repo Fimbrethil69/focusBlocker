@@ -18,6 +18,7 @@ object SocialApps {
         SocialApp("Pinterest", "com.pinterest", false),
         SocialApp("LinkedIn", "com.linkedin.android", false),
         SocialApp("BeReal", "com.bereal.ft", false),
+        SocialApp("Twitch", "tv.twitch.android.app", false),
         SocialApp("YouTube (application entière)", YOUTUBE, false),
     )
 

@@ -68,7 +68,7 @@ class BlockConfigTest {
         assertTrue(state.isBlockedAt(at(12, 14, 0)))
         // Le lendemain, la nouvelle s'applique.
         assertFalse(state.isBlockedAt(at(13, 10, 0)))
-        assertEquals(ConfigState(loosened, scheduleSince = at(13, 0, 0).toLocalDate()), state.resolved(at(13, 0, 0).toLocalDate()))
+        assertEquals(ConfigState(loosened, loosenedOn = at(13, 0, 0).toLocalDate()), state.resolved(at(13, 0, 0).toLocalDate()))
     }
 
     @Test
@@ -78,22 +78,43 @@ class BlockConfigTest {
     }
 
     @Test
-    fun scheduleUnchangedDays() {
+    fun changeKind() {
+        assertEquals(ConfigChange.NONE, config.changeTo(config))
+        // Même temps bloqué, découpé autrement.
+        val split = listOf(TimeRange.of(9, 0, 10, 0), TimeRange.of(10, 0, 12, 0), TimeRange.of(14, 0, 20, 0))
+        assertEquals(ConfigChange.NONE, config.changeTo(config.copy(ranges = split)))
+
+        assertEquals(ConfigChange.STRICTER, config.changeTo(config.copy(ranges = listOf(TimeRange.of(8, 0, 12, 0), TimeRange.of(14, 0, 20, 0)))))
+        assertEquals(ConfigChange.STRICTER, config.changeTo(config.copy(blockedPackages = config.blockedPackages + "tv.twitch.android.app")))
+        assertEquals(ConfigChange.LOOSER, config.changeTo(config.copy(ranges = listOf(TimeRange.of(9, 0, 12, 0)))))
+        assertEquals(ConfigChange.LOOSER, config.changeTo(config.copy(days = BlockConfig.ALL_DAYS - DayOfWeek.SUNDAY)))
+        assertEquals(ConfigChange.LOOSER, config.changeTo(config.copy(blockedPackages = emptySet())))
+        // Plus strict d'un côté, plus souple de l'autre : c'est un assouplissement.
+        assertEquals(
+            ConfigChange.LOOSER,
+            config.changeTo(config.copy(ranges = listOf(TimeRange.of(8, 0, 11, 0), TimeRange.of(14, 0, 20, 0)), blockedPackages = config.blockedPackages + "x")),
+        )
+    }
+
+    @Test
+    fun daysWithoutLoosening() {
         val installed = at(1, 0, 0).toLocalDate()
         val state = ConfigState(config)
-        assertEquals(11L, state.scheduleUnchangedDays(at(12, 0, 0).toLocalDate(), installed))
+        assertEquals(11L, state.daysWithoutLoosening(at(12, 0, 0).toLocalDate(), installed))
 
-        // Changer seulement les applications ne remet pas le compteur à zéro.
-        val appsOnly = state.withEdit(config.copy(blockedPackages = emptySet()), at(12, 12, 30))
-        assertFalse(appsOnly.pendingChangesSchedule)
-        assertEquals(13L, appsOnly.scheduleUnchangedDays(at(14, 0, 0).toLocalDate(), installed))
+        // Un renforcement ne remet pas le compteur à zéro et est mémorisé.
+        val stricter = state.withEdit(config.copy(blockedPackages = config.blockedPackages + "x"), at(12, 12, 30))
+        assertEquals(ConfigChange.STRICTER, stricter.pendingChange)
+        assertEquals(13L, stricter.daysWithoutLoosening(at(14, 0, 0).toLocalDate(), installed))
+        assertEquals(at(13, 0, 0).toLocalDate(), stricter.resolved(at(14, 0, 0).toLocalDate()).tightenedOn)
 
-        // Changer les horaires le remet à zéro le jour où ils prennent effet.
-        val newHours = state.withEdit(config.copy(ranges = listOf(TimeRange.of(8, 0, 12, 0))), at(12, 12, 30))
-        assertTrue(newHours.pendingChangesSchedule)
-        assertEquals(11L, newHours.scheduleUnchangedDays(at(12, 0, 0).toLocalDate(), installed))
-        assertEquals(0L, newHours.scheduleUnchangedDays(at(13, 0, 0).toLocalDate(), installed))
-        assertEquals(3L, newHours.scheduleUnchangedDays(at(16, 0, 0).toLocalDate(), installed))
+        // Un assouplissement le remet à zéro le jour où il prend effet et efface le renforcement.
+        val looser = stricter.resolved(at(14, 0, 0).toLocalDate()).withEdit(config.copy(ranges = emptyList()), at(14, 12, 30))
+        assertEquals(ConfigChange.LOOSER, looser.pendingChange)
+        assertEquals(13L, looser.daysWithoutLoosening(at(14, 0, 0).toLocalDate(), installed))
+        assertEquals(0L, looser.daysWithoutLoosening(at(15, 0, 0).toLocalDate(), installed))
+        assertEquals(3L, looser.daysWithoutLoosening(at(18, 0, 0).toLocalDate(), installed))
+        assertEquals(null, looser.resolved(at(15, 0, 0).toLocalDate()).tightenedOn)
     }
 
     @Test

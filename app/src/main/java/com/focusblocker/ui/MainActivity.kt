@@ -48,6 +48,8 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.focusblocker.core.BlockConfig
 import com.focusblocker.core.BlockCount
 import com.focusblocker.core.BlockStats
+import com.focusblocker.core.ConfigChange
+import com.focusblocker.core.ConfigState
 import com.focusblocker.core.TimeRange
 import com.focusblocker.core.formatMinute
 import com.focusblocker.data.ConfigRepository
@@ -62,6 +64,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -146,8 +150,8 @@ private fun MainScreen(repository: ConfigRepository, statsRepository: StatsRepos
             StatsSection(
                 stats = stats,
                 today = now.toLocalDate(),
-                unchangedDays = state.scheduleUnchangedDays(now.toLocalDate(), installDate),
-                pendingChangesSchedule = state.pendingChangesSchedule,
+                state = state.resolved(now.toLocalDate()),
+                daysWithoutLoosening = state.daysWithoutLoosening(now.toLocalDate(), installDate),
             )
 
             if (!canEdit) {
@@ -204,7 +208,7 @@ private fun MainScreen(repository: ConfigRepository, statsRepository: StatsRepos
 }
 
 @Composable
-private fun StatsSection(stats: BlockStats, today: LocalDate, unchangedDays: Long, pendingChangesSchedule: Boolean) {
+private fun StatsSection(stats: BlockStats, today: LocalDate, state: ConfigState, daysWithoutLoosening: Long) {
     Section("Statistiques") {
         Text("Ouvertures bloquées", style = MaterialTheme.typography.titleSmall)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -215,15 +219,31 @@ private fun StatsSection(stats: BlockStats, today: LocalDate, unchangedDays: Lon
         }
         Text("Semaine : depuis lundi · Mois : depuis le 1er", style = MaterialTheme.typography.bodySmall)
 
+        // Le compteur ne repart de zéro que si les règles sont assouplies ; un renforcement le laisse courir.
         Text(
-            if (unchangedDays == 0L) "Horaires modifiés aujourd'hui" else "Horaires inchangés depuis ${plural(unchangedDays, "jour")}",
+            if (state.loosenedOn == today) {
+                "Paramètres assouplis aujourd'hui : compteur remis à zéro"
+            } else {
+                "Paramètres inchangés depuis ${plural(daysWithoutLoosening, "jour")}"
+            },
             style = MaterialTheme.typography.titleMedium,
         )
-        if (pendingChangesSchedule) {
+        state.tightenedOn?.let { date ->
             Text(
-                "Une modification des horaires est en attente : ce compteur repartira de zéro demain.",
+                "💪 Règles renforcées ${formatDay(date, today)} : le compteur continue !",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        when (state.pendingChange) {
+            ConfigChange.LOOSER -> Text(
+                "La modification en attente assouplit vos règles : ce compteur repartira de zéro demain.",
                 style = MaterialTheme.typography.bodySmall,
             )
+            ConfigChange.STRICTER -> Text(
+                "La modification en attente renforce vos règles : le compteur continuera demain.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            ConfigChange.NONE -> Unit
         }
     }
 }
@@ -391,6 +411,12 @@ private fun pickRange(context: Context, initial: TimeRange?, onResult: (TimeRang
             if (endMinute != startMinute) onResult(TimeRange(startMinute, endMinute))
         }, end / 60, end % 60, true).apply { setTitle("Fin (début : ${formatMinute(startMinute)})") }.show()
     }, start / 60, start % 60, true).apply { setTitle("Début de la plage") }.show()
+}
+
+private fun formatDay(date: LocalDate, today: LocalDate): String = when (date) {
+    today -> "aujourd'hui"
+    today.minusDays(1) -> "hier"
+    else -> "le " + date.format(DateTimeFormatter.ofPattern("d MMMM", Locale.FRENCH))
 }
 
 private fun plural(n: Long, word: String) = if (n <= 1) "$n $word" else "$n ${word}s"

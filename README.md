@@ -5,10 +5,10 @@ Application Android qui :
 - **bloque les Shorts YouTube en permanence** : dès que le lecteur Shorts s'ouvre dans l'application YouTube, elle revient en arrière. Le reste de YouTube fonctionne normalement ;
 - **bloque les réseaux sociaux pendant des plages horaires** (par défaut **9h-12h et 14h-20h**, tous les jours) : l'application est fermée et un écran « bloqué jusqu'à… » s'affiche ;
 - **verrouille ses propres réglages** : les horaires, les jours et la liste des applications ne sont modifiables **qu'en dehors des plages de blocage**, et toute modification ne prend effet **que le lendemain** ;
-- **affiche des statistiques** : nombre d'ouvertures bloquées aujourd'hui, cette semaine, ce mois et au total (dont les Shorts), et nombre de jours depuis la dernière modification des horaires ;
+- **affiche des statistiques** : nombre d'ouvertures bloquées aujourd'hui, cette semaine, ce mois et au total (dont les Shorts), et nombre de jours sans assouplissement des paramètres ;
 - **se met à jour depuis l'application** : bouton « Vérifier les mises à jour ».
 
-Applications bloquées par défaut : Instagram, TikTok, Facebook (et Lite), Snapchat, X, Threads, Reddit. On peut aussi cocher Pinterest, LinkedIn, BeReal ou YouTube en entier.
+Applications bloquées par défaut : Instagram, TikTok, Facebook (et Lite), Snapchat, X, Threads, Reddit. On peut aussi cocher Pinterest, LinkedIn, BeReal, Twitch ou YouTube en entier.
 
 ## Installation sur le téléphone
 
@@ -28,7 +28,7 @@ On peut aussi retélécharger `FocusBlocker.apk` depuis la page Releases. Dans l
 
 L'application utilise un **service d'accessibilité** pour connaître l'application au premier plan et, dans YouTube, repérer le lecteur Shorts grâce aux identifiants de ses vues (`reel_recycler`, `reel_player_page_container`…). Si une mise à jour de YouTube renomme ces vues, il faut compléter la liste `SHORTS_VIEW_IDS` dans `BlockerAccessibilityService.kt`.
 
-Le compteur « horaires inchangés » ne repart de zéro que lorsqu'une modification des plages ou des jours **prend effet** (le lendemain). Changer seulement la liste des applications ne le remet pas à zéro.
+Le compteur « Paramètres inchangés depuis X jours » repart de zéro quand une modification qui **assouplit** les règles prend effet (le lendemain) : moins de temps bloqué (plage raccourcie ou supprimée, jour décoché) ou application retirée de la liste. Une modification qui **renforce** les règles (plus de temps bloqué, application ajoutée) ne le remet pas à zéro et affiche « 💪 Règles renforcées le … ». Une modification qui fait les deux à la fois compte comme un assouplissement.
 
 Rien ne quitte le téléphone : aucune donnée n'est collectée. L'accès à Internet ne sert qu'au bouton de mise à jour, qui télécharge `version.txt` et `FocusBlocker.apk` depuis la release « latest » de GitHub.
 
