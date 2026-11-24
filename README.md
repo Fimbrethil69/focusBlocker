@@ -10,6 +10,8 @@ Application Android qui :
 
 Applications bloquées par défaut : Instagram, TikTok, Facebook (et Lite), Snapchat, X, Threads, Reddit. On peut aussi cocher Pinterest, LinkedIn, BeReal, Twitch ou YouTube en entier.
 
+**Messages Instagram** : sous Instagram, l'option « Autoriser les messages pendant le blocage » laisse Instagram ouvert tant qu'on reste dans la liste des conversations ou dans une conversation. Tout autre écran (fil, Reels, Stories, profils…) ramène à l'écran de blocage, qui propose un bouton « Ouvrir mes messages Instagram ». Activer l'option est un assouplissement (le compteur repart de zéro), la désactiver un renforcement.
+
 ## Installation sur le téléphone
 
 1. Sur le téléphone, ouvrez la page **Releases** du dépôt GitHub et téléchargez `FocusBlocker.apk` depuis la release « latest ».
@@ -27,6 +29,8 @@ On peut aussi retélécharger `FocusBlocker.apk` depuis la page Releases. Dans l
 ## Fonctionnement
 
 L'application utilise un **service d'accessibilité** pour connaître l'application au premier plan et, dans YouTube, repérer le lecteur Shorts grâce aux identifiants de ses vues (`reel_recycler`, `reel_player_page_container`…). Si une mise à jour de YouTube renomme ces vues, il faut compléter la liste `SHORTS_VIEW_IDS` dans `BlockerAccessibilityService.kt`.
+
+Les messages Instagram sont reconnus grâce aux identifiants des vues de l'écran des messages (liste `INSTAGRAM_DIRECT_VIEW_IDS` dans `BlockerAccessibilityService.kt`). En cas de doute, l'écran est bloqué. Si Instagram les renomme, la section **Diagnostic Instagram** de l'application relève les identifiants des derniers écrans affichés, à copier pour mettre la liste à jour.
 
 Le compteur « Paramètres inchangés depuis X jours » repart de zéro quand une modification qui **assouplit** les règles prend effet (le lendemain) : moins de temps bloqué (plage raccourcie ou supprimée, jour décoché) ou application retirée de la liste. Une modification qui **renforce** les règles (plus de temps bloqué, application ajoutée) ne le remet pas à zéro et affiche « 💪 Règles renforcées le … ». Une modification qui fait les deux à la fois compte comme un assouplissement.
 

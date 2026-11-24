@@ -1,11 +1,14 @@
 package com.focusblocker.ui
 
 import android.app.TimePickerDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -28,6 +31,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -50,12 +54,14 @@ import com.focusblocker.core.BlockCount
 import com.focusblocker.core.BlockStats
 import com.focusblocker.core.ConfigChange
 import com.focusblocker.core.ConfigState
+import com.focusblocker.core.INSTAGRAM_PACKAGE
 import com.focusblocker.core.TimeRange
 import com.focusblocker.core.formatMinute
 import com.focusblocker.data.ConfigRepository
 import com.focusblocker.data.SocialApps
 import com.focusblocker.data.StatsRepository
 import com.focusblocker.service.BlockerAccessibilityService
+import com.focusblocker.service.InstagramDiagnostics
 import com.focusblocker.update.Updater
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -203,6 +209,7 @@ private fun MainScreen(repository: ConfigRepository, statsRepository: StatsRepos
             }
 
             UpdateSection()
+            DiagnosticSection()
         }
     }
 }
@@ -313,6 +320,47 @@ private fun UpdateSection() {
     }
 }
 
+/** Relevé des écrans Instagram, à copier pour régler la détection des messages. */
+@Composable
+private fun DiagnosticSection() {
+    val context = LocalContext.current
+    val diagnostics = remember { InstagramDiagnostics.get(context) }
+    var enabled by remember { mutableStateOf(diagnostics.enabled) }
+    var report by remember { mutableStateOf(diagnostics.report) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { report = diagnostics.report }
+
+    Section("Diagnostic Instagram") {
+        Text(
+            "Sert à régler la détection des messages Instagram. Activez-le, ouvrez Instagram en dehors des " +
+                "horaires de blocage, allez dans la liste des messages puis dans une conversation, revenez ici " +
+                "et copiez le relevé.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Relever les écrans Instagram", Modifier.weight(1f))
+            Switch(checked = enabled, onCheckedChange = {
+                enabled = it
+                diagnostics.enabled = it
+            })
+        }
+        Text(
+            if (report.isEmpty()) "Aucun écran relevé." else "${report.split("\n\n").size} écran(s) relevé(s).",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(enabled = report.isNotEmpty(), onClick = {
+                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                clipboard.setPrimaryClip(ClipData.newPlainText("Diagnostic FocusBlocker", report))
+                Toast.makeText(context, "Relevé copié", Toast.LENGTH_SHORT).show()
+            }) { Text("Copier le relevé") }
+            OutlinedButton(enabled = report.isNotEmpty(), onClick = {
+                diagnostics.clear()
+                report = ""
+            }) { Text("Effacer") }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ScheduleSection(config: BlockConfig, enabled: Boolean, onChange: (BlockConfig) -> Unit) {
@@ -371,6 +419,31 @@ private fun AppsSection(config: BlockConfig, enabled: Boolean, onChange: (BlockC
             ) {
                 Checkbox(checked = checked, onCheckedChange = null, enabled = enabled, modifier = Modifier.padding(12.dp))
                 Text(app.name + if (installed) "" else " (non installée)")
+            }
+            if (app.packageName == INSTAGRAM_PACKAGE && checked) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(start = 40.dp)
+                        .clickable(enabled = enabled) {
+                            onChange(config.copy(allowInstagramDirect = !config.allowInstagramDirect))
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = config.allowInstagramDirect,
+                        onCheckedChange = null,
+                        enabled = enabled,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                    Column {
+                        Text("Autoriser les messages pendant le blocage")
+                        Text(
+                            "Conversations uniquement : le reste d'Instagram reste bloqué.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
             }
         }
     }

@@ -3,12 +3,16 @@ package com.focusblocker.service
 import android.accessibilityservice.AccessibilityService
 import android.content.ComponentName
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
+import com.focusblocker.core.BlockConfig
 import com.focusblocker.core.BlockKind
+import com.focusblocker.core.INSTAGRAM_PACKAGE
 import com.focusblocker.data.ConfigRepository
 import com.focusblocker.data.SocialApps
 import com.focusblocker.data.StatsRepository
@@ -18,18 +22,41 @@ import java.time.LocalDateTime
 /**
  * Surveille l'application au premier plan :
  *  - réseaux sociaux pendant une plage bloquée → retour à l'accueil + écran de blocage ;
- *  - lecteur Shorts de YouTube (à toute heure) → retour arrière.
+ *  - lecteur Shorts de YouTube (à toute heure) → retour arrière ;
+ *  - si l'option est cochée, Instagram reste ouvert pendant le blocage tant qu'on est dans les messages.
  */
 class BlockerAccessibilityService : AccessibilityService() {
     private lateinit var repository: ConfigRepository
     private lateinit var stats: StatsRepository
+    private lateinit var diagnostics: InstagramDiagnostics
+    private val handler = Handler(Looper.getMainLooper())
     private var lastActionAt = 0L
     private var lastShortsCheckAt = 0L
+    private var lastInstagramCheckAt = 0L
+    private var lastDiagnosticAt = 0L
     private var lastToastAt = 0L
+    private var instagramRecheckPending = false
+
+    // Revérifie l'écran Instagram un peu plus tard : au démarrage ou à l'ouverture d'une
+    // notification, Instagram affiche brièvement d'autres écrans avant la conversation.
+    private val instagramRecheck = Runnable {
+        instagramRecheckPending = false
+        val now = LocalDateTime.now()
+        val config = repository.current(now)
+        val root = rootInActiveWindow
+        if (root?.packageName?.toString() == INSTAGRAM_PACKAGE &&
+            instagramDirectOnly(config, now) &&
+            SystemClock.elapsedRealtime() >= directGraceUntil &&
+            !isInstagramDirectVisible()
+        ) {
+            block(INSTAGRAM_PACKAGE, SystemClock.elapsedRealtime())
+        }
+    }
 
     override fun onServiceConnected() {
         repository = ConfigRepository.get(this)
         stats = StatsRepository.get(this)
+        diagnostics = InstagramDiagnostics.get(this)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -40,13 +67,19 @@ class BlockerAccessibilityService : AccessibilityService() {
         // Laisse le temps à l'action précédente de s'appliquer, pour ne pas boucler.
         if (nowMs - lastActionAt < ACTION_COOLDOWN_MS) return
 
+        if (pkg == INSTAGRAM_PACKAGE && diagnostics.enabled && nowMs - lastDiagnosticAt > DIAGNOSTIC_INTERVAL_MS) {
+            lastDiagnosticAt = nowMs
+            rootInActiveWindow?.takeIf { it.packageName?.toString() == INSTAGRAM_PACKAGE }?.let(diagnostics::capture)
+        }
+
         val now = LocalDateTime.now()
         val config = repository.current(now)
+        if (pkg == INSTAGRAM_PACKAGE && instagramDirectOnly(config, now)) {
+            checkInstagramDirect(event, nowMs)
+            return
+        }
         if (pkg in config.blockedPackages && config.isBlockedAt(now)) {
-            lastActionAt = nowMs
-            performGlobalAction(GLOBAL_ACTION_HOME)
-            startActivity(BlockActivity.intent(this, pkg))
-            stats.record(BlockKind.SOCIAL)
+            block(pkg, nowMs)
             return
         }
 
@@ -67,6 +100,40 @@ class BlockerAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun block(pkg: String, nowMs: Long) {
+        lastActionAt = nowMs
+        performGlobalAction(GLOBAL_ACTION_HOME)
+        startActivity(BlockActivity.intent(this, pkg))
+        stats.record(BlockKind.SOCIAL)
+    }
+
+    private fun instagramDirectOnly(config: BlockConfig, now: LocalDateTime): Boolean =
+        config.allowInstagramDirect && INSTAGRAM_PACKAGE in config.blockedPackages && config.isBlockedAt(now)
+
+    private fun checkInstagramDirect(event: AccessibilityEvent, nowMs: Long) {
+        if (nowMs < directGraceUntil) return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
+            nowMs - lastInstagramCheckAt < INSTAGRAM_CHECK_INTERVAL_MS
+        ) return
+        lastInstagramCheckAt = nowMs
+        if (isInstagramDirectVisible()) {
+            handler.removeCallbacks(instagramRecheck)
+            instagramRecheckPending = false
+        } else if (!instagramRecheckPending) {
+            instagramRecheckPending = true
+            handler.postDelayed(instagramRecheck, INSTAGRAM_RECHECK_DELAY_MS)
+        }
+    }
+
+    private fun isInstagramDirectVisible(): Boolean {
+        val root = rootInActiveWindow ?: return false
+        if (root.packageName?.toString() != INSTAGRAM_PACKAGE) return false
+        return INSTAGRAM_DIRECT_VIEW_IDS.any { id ->
+            root.findAccessibilityNodeInfosByViewId("$INSTAGRAM_PACKAGE:id/$id")
+                .any(AccessibilityNodeInfo::isVisibleToUser)
+        }
+    }
+
     private fun isShortsVisible(): Boolean {
         val root = rootInActiveWindow ?: return false
         if (root.packageName?.toString() != SocialApps.YOUTUBE) return false
@@ -78,9 +145,36 @@ class BlockerAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() = Unit
 
+    override fun onDestroy() {
+        handler.removeCallbacks(instagramRecheck)
+        super.onDestroy()
+    }
+
     companion object {
         private const val ACTION_COOLDOWN_MS = 1_200L
         private const val SHORTS_CHECK_INTERVAL_MS = 400L
+        private const val INSTAGRAM_CHECK_INTERVAL_MS = 400L
+        private const val INSTAGRAM_RECHECK_DELAY_MS = 1_500L
+        private const val DIAGNOSTIC_INTERVAL_MS = 1_000L
+        private const val DIRECT_GRACE_MS = 5_000L
+
+        // Identifiants des vues de la liste des conversations et d'une conversation Instagram.
+        // Instagram les renomme parfois : le diagnostic de l'application aide à les retrouver.
+        private val INSTAGRAM_DIRECT_VIEW_IDS = listOf(
+            "row_thread_composer_edittext",
+            "row_thread_composer_container",
+            "direct_thread_toolbar",
+            "inbox_refreshable_thread_list_recyclerview",
+            "direct_inbox_container",
+        )
+
+        /** Jusqu'à cet instant, Instagram n'est pas vérifié : le temps d'ouvrir les messages. */
+        @Volatile
+        private var directGraceUntil = 0L
+
+        fun allowInstagramDirectLaunch() {
+            directGraceUntil = SystemClock.elapsedRealtime() + DIRECT_GRACE_MS
+        }
 
         // Identifiants des vues du lecteur Shorts dans l'application YouTube.
         // À compléter si une mise à jour de YouTube les renomme.

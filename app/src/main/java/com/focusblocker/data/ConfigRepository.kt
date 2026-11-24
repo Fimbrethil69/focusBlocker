@@ -72,6 +72,7 @@ class ConfigRepository private constructor(context: Context) {
             })
             put("days", JSONArray().apply { config.days.forEach { put(it.value) } })
             put("packages", JSONArray().apply { config.blockedPackages.forEach { put(it) } })
+            put("instagramDirect", config.allowInstagramDirect)
         }
 
         private fun decode(json: String?): ConfigState {
@@ -96,7 +97,7 @@ class ConfigRepository private constructor(context: Context) {
             }
             val days = o.getJSONArray("days").let { a -> (0 until a.length()).map { DayOfWeek.of(a.getInt(it)) }.toSet() }
             val packages = o.getJSONArray("packages").let { a -> (0 until a.length()).map { a.getString(it) }.toSet() }
-            return BlockConfig(ranges, days, packages)
+            return BlockConfig(ranges, days, packages, o.optBoolean("instagramDirect", false))
         }
     }
 }

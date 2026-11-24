@@ -97,6 +97,18 @@ class BlockConfigTest {
     }
 
     @Test
+    fun instagramDirectOption() {
+        val direct = config.copy(allowInstagramDirect = true)
+        assertEquals(ConfigChange.LOOSER, config.changeTo(direct))
+        assertEquals(ConfigChange.STRICTER, direct.changeTo(config))
+        // Sans Instagram dans la liste, l'option ne change rien.
+        val noInsta = config.copy(blockedPackages = setOf("com.twitter.android"))
+        assertEquals(ConfigChange.NONE, noInsta.changeTo(noInsta.copy(allowInstagramDirect = true)))
+        // Bloquer Instagram, même avec les messages autorisés, reste un renforcement.
+        assertEquals(ConfigChange.STRICTER, noInsta.changeTo(noInsta.copy(blockedPackages = noInsta.blockedPackages + INSTAGRAM_PACKAGE, allowInstagramDirect = true)))
+    }
+
+    @Test
     fun daysWithoutLoosening() {
         val installed = at(1, 0, 0).toLocalDate()
         val state = ConfigState(config)

@@ -27,6 +27,8 @@ data class BlockConfig(
     val ranges: List<TimeRange>,
     val days: Set<DayOfWeek>,
     val blockedPackages: Set<String>,
+    /** Pendant le blocage, laisse Instagram ouvert tant qu'on reste dans les messages. */
+    val allowInstagramDirect: Boolean = false,
 ) {
     fun isBlockedAt(time: LocalDateTime): Boolean {
         val minute = time.hour * 60 + time.minute
@@ -57,12 +59,17 @@ data class BlockConfig(
 
     /**
      * Compare [newConfig] à cette configuration.
-     * Plus souple dès qu'une application ou une minute de la semaine n'est plus bloquée,
-     * même si d'autres réglages deviennent plus stricts en même temps.
+     * Plus souple dès qu'une application ou une minute de la semaine n'est plus bloquée
+     * (ou que les messages Instagram sont autorisés), même si d'autres réglages deviennent
+     * plus stricts en même temps.
      */
     fun changeTo(newConfig: BlockConfig): ConfigChange {
         val appRemoved = !newConfig.blockedPackages.containsAll(blockedPackages)
         val appAdded = !blockedPackages.containsAll(newConfig.blockedPackages)
+        // L'option des messages ne compte que si Instagram reste bloqué avant et après.
+        val instagramBlocked = INSTAGRAM_PACKAGE in blockedPackages && INSTAGRAM_PACKAGE in newConfig.blockedPackages
+        val directOpened = instagramBlocked && !allowInstagramDirect && newConfig.allowInstagramDirect
+        val directClosed = instagramBlocked && allowInstagramDirect && !newConfig.allowInstagramDirect
         var lessTime = false
         var moreTime = false
         var t = REFERENCE_MONDAY
@@ -74,8 +81,8 @@ data class BlockConfig(
             t = t.plusMinutes(1)
         }
         return when {
-            appRemoved || lessTime -> ConfigChange.LOOSER
-            appAdded || moreTime -> ConfigChange.STRICTER
+            appRemoved || lessTime || directOpened -> ConfigChange.LOOSER
+            appAdded || moreTime || directClosed -> ConfigChange.STRICTER
             else -> ConfigChange.NONE
         }
     }
@@ -148,5 +155,7 @@ data class ConfigState(
 }
 
 const val MINUTES_PER_DAY = 24 * 60
+
+const val INSTAGRAM_PACKAGE = "com.instagram.android"
 
 fun formatMinute(minute: Int): String = "%02d:%02d".format(minute / 60, minute % 60)
