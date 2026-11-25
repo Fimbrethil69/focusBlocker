@@ -38,7 +38,11 @@ class InstagramDiagnostics private constructor(context: Context) {
 
     private fun collect(node: AccessibilityNodeInfo, ids: MutableSet<String>, depth: Int) {
         if (depth > 60 || ids.size > 400) return
-        node.viewIdResourceName?.let { if (node.isVisibleToUser) ids += it.removePrefix("$INSTAGRAM_PACKAGE:id/") }
+        if (node.isVisibleToUser) {
+            node.viewIdResourceName?.let { ids += it.removePrefix("$INSTAGRAM_PACKAGE:id/") }
+            // Texte d'aide des zones de saisie (« Message… », « Rechercher »), jamais ce qui est tapé.
+            if (node.isEditable) ids += "[saisie : ${node.hintText ?: "?"}]"
+        }
         for (i in 0 until node.childCount) {
             node.getChild(i)?.let { collect(it, ids, depth + 1) }
         }

@@ -128,9 +128,43 @@ class BlockerAccessibilityService : AccessibilityService() {
     private fun isInstagramDirectVisible(): Boolean {
         val root = rootInActiveWindow ?: return false
         if (root.packageName?.toString() != INSTAGRAM_PACKAGE) return false
-        return INSTAGRAM_DIRECT_VIEW_IDS.any { id ->
+        val scan = InstagramScreenScan().also { it.visit(root, depth = 0) }
+        if (scan.forbidden) return false
+        return scan.messageComposer || INSTAGRAM_DIRECT_VIEW_IDS.any { id ->
             root.findAccessibilityNodeInfosByViewId("$INSTAGRAM_PACKAGE:id/$id")
                 .any(AccessibilityNodeInfo::isVisibleToUser)
+        }
+    }
+
+    /**
+     * Parcourt l'écran Instagram :
+     *  - une zone de saisie « Message… » visible signale une conversation, quels que soient
+     *    les identifiants internes d'Instagram ;
+     *  - le fil, les Stories et les Reels sont refusés même si une telle zone est visible
+     *    (réponse à une Story, partage d'une publication).
+     */
+    private class InstagramScreenScan {
+        var forbidden = false
+        var messageComposer = false
+        private var visited = 0
+
+        fun visit(node: AccessibilityNodeInfo, depth: Int) {
+            if (forbidden || depth > 60 || ++visited > 1_500) return
+            if (node.isVisibleToUser) {
+                val id = node.viewIdResourceName?.removePrefix("$INSTAGRAM_PACKAGE:id/").orEmpty()
+                if (INSTAGRAM_FORBIDDEN_ID_PREFIXES.any { id.startsWith(it) }) {
+                    forbidden = true
+                    return
+                }
+                // Selon les versions, le texte d'aide est exposé comme « hint » ou comme texte du champ vide.
+                val hint = (node.hintText ?: node.text)?.toString().orEmpty()
+                if (node.isEditable && hint.contains("message", ignoreCase = true)) {
+                    messageComposer = true
+                }
+            }
+            for (i in 0 until node.childCount) {
+                node.getChild(i)?.let { visit(it, depth + 1) }
+            }
         }
     }
 
@@ -167,6 +201,9 @@ class BlockerAccessibilityService : AccessibilityService() {
             "inbox_refreshable_thread_list_recyclerview",
             "direct_inbox_container",
         )
+
+        // Début des identifiants du fil, des Stories et des Reels : jamais autorisés.
+        private val INSTAGRAM_FORBIDDEN_ID_PREFIXES = listOf("row_feed_", "reel_viewer", "clips_viewer")
 
         /** Jusqu'à cet instant, Instagram n'est pas vérifié : le temps d'ouvrir les messages. */
         @Volatile
